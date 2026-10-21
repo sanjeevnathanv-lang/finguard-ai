@@ -12,6 +12,10 @@ backend/.pytest_cache/
 *.db
 *.sqlite3
 
+# Archives
+*.zip
+*.tar.gz
+
 # Node / Frontend
 node_modules/
 frontend/node_modules/
