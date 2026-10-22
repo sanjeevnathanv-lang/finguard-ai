@@ -12,9 +12,11 @@ backend/.pytest_cache/
 *.db
 *.sqlite3
 
-# Archives
+# Archives & Documents
 *.zip
 *.tar.gz
+*.pdf
+FinGuard_AI_Complete_Specification.html
 
 # Node / Frontend
 node_modules/
