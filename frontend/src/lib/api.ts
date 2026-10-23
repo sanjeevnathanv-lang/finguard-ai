@@ -80,6 +80,16 @@ export interface DashboardMetrics {
   system_health: string
 }
 
+export interface ResetMetricsResponse {
+  status: string
+  message: string
+  transactions_deleted: number
+  assessments_deleted: number
+  cases_deleted: number
+  dataset_imports_deleted: number
+  metrics?: DashboardMetrics
+}
+
 export interface HealthResponse {
   status: string
 }
@@ -360,6 +370,24 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   if (!response.ok) {
     const text = await response.text()
     throw new Error(`Dashboard request failed: ${response.status} – ${text}`)
+  }
+  return response.json()
+}
+
+export async function resetTransactionsAndMetricsApi(): Promise<ResetMetricsResponse> {
+  const response = await authFetch('/api/dashboard/reset-metrics', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (!response.ok) {
+    let detail = `Failed to reset metrics (${response.status})`
+    try {
+      const err = await response.json()
+      detail = err.detail || JSON.stringify(err)
+    } catch {
+      detail = await response.text()
+    }
+    throw new Error(detail)
   }
   return response.json()
 }

@@ -156,3 +156,24 @@ async def upload_transactions_csv(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process CSV file: {str(e)}",
         )
+
+
+@router.post("/reset")
+def reset_all_transactions(
+    current_user: User = Depends(require_analyst),
+    db: Session = Depends(get_db),
+):
+    """Purge all transaction records and operational history."""
+    try:
+        return transaction_service.reset_transactions_and_data(
+            db=db,
+            actor_username=current_user.username,
+            actor_role=current_user.role,
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset transactions: {str(e)}",
+        )
+

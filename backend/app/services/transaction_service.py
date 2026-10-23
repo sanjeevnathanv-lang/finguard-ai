@@ -9,7 +9,15 @@ from decimal import Decimal, InvalidOperation
 from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy import func, or_, desc, asc
 from sqlalchemy.orm import Session
-from app.db.models import Transaction, DatasetImport
+from app.db.models import (
+    Transaction,
+    DatasetImport,
+    Assessment,
+    Case,
+    CaseTransaction,
+    CaseEvent,
+)
+from app.services.audit_service import record_audit_event
 from app.schemas.transaction import (
     TransactionCreate,
     CSVRowError,
@@ -450,3 +458,56 @@ def get_dashboard_metrics(db: Session) -> DashboardMetricsResponse:
         dataset_summary=dataset_summary,
         system_health="ok",
     )
+
+
+def reset_transactions_and_data(
+    db: Session,
+    actor_username: str = "SYSTEM",
+    actor_role: str = "ADMIN",
+) -> Dict[str, Any]:
+    """Purge all transaction history and operational data while strictly preserving users and audit integrity."""
+    # Count rows before deletion
+    assessment_count = db.query(func.count(Assessment.id)).scalar() or 0
+    case_txn_count = db.query(func.count(CaseTransaction.id)).scalar() or 0
+    case_event_count = db.query(func.count(CaseEvent.id)).scalar() or 0
+    case_count = db.query(func.count(Case.id)).scalar() or 0
+    txn_count = db.query(func.count(Transaction.id)).scalar() or 0
+    import_count = db.query(func.count(DatasetImport.id)).scalar() or 0
+
+    # Execute deletion in child-to-parent order to respect foreign key constraints
+    db.query(Assessment).delete(synchronize_session=False)
+    db.query(CaseTransaction).delete(synchronize_session=False)
+    db.query(CaseEvent).delete(synchronize_session=False)
+    db.query(Case).delete(synchronize_session=False)
+    db.query(Transaction).delete(synchronize_session=False)
+    db.query(DatasetImport).delete(synchronize_session=False)
+
+    db.commit()
+
+    # Cryptographically record the purge action into the audit trail
+    record_audit_event(
+        db,
+        event_type="TRANSACTIONS_PURGED",
+        actor_username=actor_username,
+        actor_role=actor_role,
+        record_reference="ALL_TRANSACTIONS",
+        status="SUCCESS",
+        metadata={
+            "transactions_deleted": txn_count,
+            "assessments_deleted": assessment_count,
+            "cases_deleted": case_count,
+            "case_transactions_deleted": case_txn_count,
+            "case_events_deleted": case_event_count,
+            "dataset_imports_deleted": import_count,
+        },
+    )
+
+    return {
+        "status": "cleared",
+        "message": "All transaction history and operational surveillance data have been purged successfully.",
+        "transactions_deleted": txn_count,
+        "assessments_deleted": assessment_count,
+        "cases_deleted": case_count,
+        "dataset_imports_deleted": import_count,
+    }
+

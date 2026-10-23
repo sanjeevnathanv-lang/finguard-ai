@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import { checkHealth, getDashboardMetrics, DashboardMetrics, HealthResponse } from '../lib/api'
+import {
+  checkHealth,
+  getDashboardMetrics,
+  resetTransactionsAndMetricsApi,
+  DashboardMetrics,
+  HealthResponse,
+} from '../lib/api'
 import LoadingSpinner from '../components/LoadingSpinner'
 import StatusBadge from '../components/StatusBadge'
 
@@ -11,7 +17,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(true)
+  const [resetting, setResetting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const fetchData = async () => {
     setLoading(true)
@@ -24,6 +32,27 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       setError(err.message || 'Failed to communicate with backend service.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleRefreshMetrics = async () => {
+    setResetting(true)
+    setError(null)
+    setSuccessMessage(null)
+    try {
+      const res = await resetTransactionsAndMetricsApi()
+      if (res.metrics) {
+        setMetrics(res.metrics)
+      } else {
+        await fetchData()
+      }
+      setSuccessMessage(
+        `All transaction histories and data have been cleared successfully. Dashboard metrics reset to zero (${res.transactions_deleted} transactions purged).`
+      )
+    } catch (err: any) {
+      setError(err.message || 'Failed to clear transactions and refresh metrics.')
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -56,11 +85,22 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         <div className="flex items-center space-x-3">
           <button
             type="button"
-            onClick={() => fetchData()}
-            disabled={loading}
-            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition shadow-sm"
+            onClick={handleRefreshMetrics}
+            disabled={loading || resetting}
+            title="Click to clear all transaction history and operational data, resetting metrics to zero"
+            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 active:bg-slate-100 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1.5"
           >
-            Refresh Metrics
+            {resetting ? (
+              <>
+                <svg className="animate-spin -ml-0.5 mr-1 h-3.5 w-3.5 text-slate-700" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+                <span>Clearing & Resetting...</span>
+              </>
+            ) : (
+              <span>Refresh Metrics</span>
+            )}
           </button>
 
           <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
@@ -71,6 +111,22 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       {/* Notifications */}
+      {successMessage && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-900 flex justify-between items-center transition">
+          <div className="flex items-center space-x-2">
+            <span className="text-emerald-600 font-bold text-base leading-none">✓</span>
+            <p className="font-medium">{successMessage}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSuccessMessage(null)}
+            className="text-xs text-emerald-700 hover:text-emerald-900 font-bold ml-4"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-800 flex justify-between items-center">
           <div>
