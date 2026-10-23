@@ -2,12 +2,14 @@
 Provides transaction management, expert system inference, assessments, dashboard metrics, data ingestion, and health checks.
 """
 
+import os
 import uuid
 import re
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
@@ -133,3 +135,40 @@ def health_readiness_check():
         "knowledge_base_rules": rules_count,
         "environment": "active",
     }
+
+
+# Static Frontend SPA Mounting (Unified Full-Stack Deployment)
+FRONTEND_DIST = os.environ.get(
+    "FRONTEND_DIST_DIR",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")),
+)
+
+if os.path.exists(FRONTEND_DIST) and os.path.exists(os.path.join(FRONTEND_DIST, "index.html")):
+    assets_dir = os.path.join(FRONTEND_DIST, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
+
+    @app.get("/", include_in_schema=False)
+    async def serve_index():
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa_fallback(request: Request, full_path: str):
+        # Exclude reserved backend paths so API 404s are not masked as HTML
+        if full_path.startswith(("api/", "api", "health", "docs", "redoc", "openapi.json")):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Endpoint not found.")
+        file_path = os.path.join(FRONTEND_DIST, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+else:
+    @app.get("/", tags=["system"])
+    def root_api_index():
+        return {
+            "name": settings.PROJECT_NAME,
+            "version": settings.VERSION,
+            "status": "operational",
+            "docs": "/docs",
+            "message": "Frontend build not detected. Run 'npm run build' inside frontend/ to serve the UI.",
+        }
+

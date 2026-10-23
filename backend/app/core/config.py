@@ -12,6 +12,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "*",
     ]
     JWT_SECRET: str = Field(default="finguard-ai-local-dev-secret-change-in-production-2026")
     JWT_ALGORITHM: str = "HS256"

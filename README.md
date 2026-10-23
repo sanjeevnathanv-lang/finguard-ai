@@ -80,28 +80,80 @@ findgaurd ai/
 └─ README.md
 ```
 
-## Quick Start (Windows PowerShell)
+## Deployment Guide (Unified Full-Stack)
+
+FinGuard AI is architected as a **unified full-stack repository**. The FastAPI backend automatically serves the compiled React Single Page Application (SPA) alongside the `/api` REST endpoints from a single server and port.
+
+### Option 1: 1-Click Deploy on Render (Recommended)
+
+1. Push this repository to your GitHub account.
+2. Sign in to [Render](https://render.com) and click **New +** $\to$ **Blueprint** (or connect your GitHub repository).
+3. Select this repo. Render will automatically detect [`render.yaml`](render.yaml) and configure:
+   - **Build Command**: `npm --prefix frontend install && npm --prefix frontend run build && pip install -r backend/requirements.txt`
+   - **Start Command**: `uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT`
+4. Click **Apply**. Your full-stack FinGuard AI application will be live at `https://your-app.onrender.com`.
+
+### Option 2: Deploy with Docker / Docker Compose
+
+A production-ready multi-stage [`Dockerfile`](Dockerfile) and [`docker-compose.yml`](docker-compose.yml) are included at the root:
+
+```bash
+# Build and run with Docker Compose
+docker compose up --build -d
+
+# Open http://localhost:8000 in your browser
+```
+
+### Option 3: Deploy on Railway / Heroku / Dokku
+
+A root [`Procfile`](Procfile) is provided:
+```bash
+web: uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port ${PORT:-8000}
+```
+In your Railway/Heroku project settings:
+- Add a buildpack for Node.js: `heroku/nodejs` (or build frontend via `npm --prefix frontend run build`)
+- Add a buildpack for Python: `heroku/python`
+- Deploy branch `main`.
+
+### Option 4: Run Unified Full-Stack Locally
+
+You can run both the frontend UI and backend API on a single port (`8000`) without running two separate servers:
+
+```bash
+# 1. Build the React frontend
+npm run build
+
+# 2. Start the unified FastAPI server
+npm start
+# or: uvicorn app.main:app --app-dir backend --port 8000
+```
+Visit `http://localhost:8000` to access the full application.
+
+---
+
+## Quick Start (Local Development)
 
 ### Terminal 1: Backend
 ```powershell
-cd "C:\Users\Sanjeev Nathan V\Downloads\findgaurd ai\backend"
+cd "backend"
 .\venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 API runs at `http://127.0.0.1:8000`. Interactive OpenAPI documentation at `http://127.0.0.1:8000/docs`.
 
 ### Terminal 2: Frontend
 ```powershell
-cd "C:\Users\Sanjeev Nathan V\Downloads\findgaurd ai\frontend"
+cd "frontend"
 npm run dev
 ```
 Dashboard opens at `http://localhost:5173`.
 
 ### Automated Test Suite
 ```powershell
-cd "C:\Users\Sanjeev Nathan V\Downloads\findgaurd ai\backend"
+cd "backend"
 .\venv\Scripts\python.exe -m pytest -v
 ```
-All 34 tests pass across database persistence, constraint enforcement, pagination, CSV schema validation, dashboard metrics, forward-chaining deduction, multi-step rule cycles, deterministic conflict resolution, feature extraction anti-leakage invariants, currency segregation, Isolation Forest anomaly scoring, data-gated supervised training, and hybrid orchestration.
+All 60 tests pass across database persistence, constraint enforcement, pagination, CSV schema validation, dashboard metrics, forward-chaining deduction, multi-step rule cycles, deterministic conflict resolution, feature extraction anti-leakage invariants, currency segregation, Isolation Forest anomaly scoring, data-gated supervised training, hybrid orchestration, access control, audit verification, and unified metrics reset.
+
 
 ---
 *Notice: All demonstration records generated through the seed endpoint or sample CSV are synthetic and clearly marked with `is_synthetic: true`.*

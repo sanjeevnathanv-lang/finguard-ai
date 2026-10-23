@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  finguard-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: finguard-ai:latest
+    container_name: finguard-ai
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - DATABASE_URL=sqlite:///./finguard.db
+      - JWT_SECRET=finguard-ai-production-secret-change-me
+    volumes:
+      - finguard_storage:/app/backend
+    restart: unless-stopped
+
+volumes:
+  finguard_storage:

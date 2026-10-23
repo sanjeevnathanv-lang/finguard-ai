@@ -21,7 +21,7 @@ FinGuard_AI_Complete_Specification.html
 # Node / Frontend
 node_modules/
 frontend/node_modules/
-frontend/dist/
+# frontend/dist/ (committed so single-service Python deployments serve the UI out-of-the-box)
 .npm
 npm-debug.log*
 
