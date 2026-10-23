@@ -8,6 +8,7 @@ from app.core.deps import require_admin
 from app.schemas.auth import (
     UserCreate,
     UserUpdateStatus,
+    UserUpdateRole,
     UserRead,
 )
 from app.services import user_service
@@ -72,3 +73,30 @@ def update_user_status_endpoint(
         return UserRead.model_validate(user)
     except UserNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.patch("/{user_id}/role", response_model=UserRead)
+def update_user_role_endpoint(
+    user_id: int,
+    role_in: UserUpdateRole,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Modify the platform authorization role for a user account (Administrator role required)."""
+    if current_admin.id == user_id and role_in.role.upper() != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Administrators cannot demote their own active administrative account.",
+        )
+    try:
+        user = user_service.update_user_role(
+            db=db,
+            user_id=user_id,
+            new_role=role_in.role,
+            actor_username=current_admin.username,
+        )
+        return UserRead.model_validate(user)
+    except UserNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

@@ -8,6 +8,7 @@ import {
   getUsersApi,
   createUserApi,
   updateUserStatusApi,
+  updateUserRoleApi,
   getAuditLogsApi,
   verifyAuditChainApi,
   getSystemReadinessApi,
@@ -15,11 +16,21 @@ import {
 } from '../lib/api'
 import LoadingSpinner from '../components/LoadingSpinner'
 
-export default function AuditGovernance() {
+interface AuditGovernanceProps {
+  initialTab?: 'audit' | 'users' | 'diagnostics'
+}
+
+export default function AuditGovernance({ initialTab = 'audit' }: AuditGovernanceProps) {
   const { role, user: currentUser } = useAuth()
   const isAdmin = role === 'ADMIN'
 
-  const [activeTab, setActiveTab] = useState<'audit' | 'users' | 'diagnostics'>('audit')
+  const [activeTab, setActiveTab] = useState<'audit' | 'users' | 'diagnostics'>(initialTab)
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab)
+    }
+  }, [initialTab])
 
   // Audit Log State
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
@@ -38,6 +49,11 @@ export default function AuditGovernance() {
   const [users, setUsers] = useState<UserProfile[]>([])
   const [loadingUsers, setLoadingUsers] = useState<boolean>(false)
   const [showAddUserModal, setShowAddUserModal] = useState<boolean>(false)
+
+  // Role Update State
+  const [roleChangeTarget, setRoleChangeTarget] = useState<{ user: UserProfile; newRole: UserRole } | null>(null)
+  const [roleUpdating, setRoleUpdating] = useState<boolean>(false)
+  const [roleError, setRoleError] = useState<string | null>(null)
 
   // User form
   const [newUsername, setNewUsername] = useState('')
@@ -149,6 +165,22 @@ export default function AuditGovernance() {
     }
   }
 
+  // Handle role modification
+  const handleConfirmRoleChange = async () => {
+    if (!roleChangeTarget) return
+    setRoleUpdating(true)
+    setRoleError(null)
+    try {
+      await updateUserRoleApi(roleChangeTarget.user.id, roleChangeTarget.newRole)
+      setRoleChangeTarget(null)
+      await loadUsers()
+    } catch (err: any) {
+      setRoleError(err.message || 'Failed to update user role.')
+    } finally {
+      setRoleUpdating(false)
+    }
+  }
+
   useEffect(() => {
     if (isAdmin) {
       loadAuditLogs()
@@ -200,7 +232,7 @@ export default function AuditGovernance() {
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-1">
           <h4 className="font-bold text-amber-900">Restricted Administrator Area</h4>
           <p className="text-amber-800">
-            Audit log entries and user management require the <strong>ADMIN</strong> role. You are currently logged in with the <strong>{role}</strong> role. Use the user switcher in the left navigation panel to switch to the Admin profile to inspect and verify security audits.
+            Audit log entries, user provisioning, and role modifications require the <strong>ADMIN</strong> role. You are currently logged in with the <strong>{role}</strong> role. Backend RBAC policies strictly enforce these boundaries.
           </p>
         </div>
       )}
@@ -218,19 +250,17 @@ export default function AuditGovernance() {
         >
           Audit Log & Cryptographic Chain
         </button>
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('users')}
-            className={`pb-3 transition-colors ${
-              activeTab === 'users'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            User Access Control ({users.length || '...'})
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setActiveTab('users')}
+          className={`pb-3 transition-colors ${
+            activeTab === 'users'
+              ? 'border-b-2 border-blue-600 text-blue-600'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          Access Control & IAM {isAdmin ? `(${users.length || '...'})` : ''}
+        </button>
         <button
           type="button"
           onClick={() => setActiveTab('diagnostics')}
@@ -376,91 +406,281 @@ export default function AuditGovernance() {
         </div>
       )}
 
-      {/* ================= TAB 2: USER MANAGEMENT ================= */}
-      {activeTab === 'users' && isAdmin && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-600">
-              Active role-based authorized user accounts
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowAddUserModal(true)}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition"
-            >
-              + Create New User
-            </button>
-          </div>
+      {/* ================= TAB 2: ACCESS CONTROL & IAM ================= */}
+      {activeTab === 'users' && (
+        <div className="space-y-6">
+          {isAdmin ? (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Platform Identity & Access Management (IAM)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Authorized role assignments and administrative account management. Role changes are verified and audited.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddUserModal(true)}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition shrink-0 self-start sm:self-auto"
+                >
+                  + Provision New Account
+                </button>
+              </div>
 
-          {loadingUsers ? (
-            <div className="py-16 flex justify-center">
-              <LoadingSpinner />
+              {loadingUsers ? (
+                <div className="py-16 flex justify-center">
+                  <LoadingSpinner />
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-[11px]">
+                        <th className="py-3 px-4">Username</th>
+                        <th className="py-3 px-4">Full Name & Email</th>
+                        <th className="py-3 px-4">Role Assignment</th>
+                        <th className="py-3 px-4">Account Status</th>
+                        <th className="py-3 px-4">Last Login</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {users.map((u) => {
+                        const isSelf = u.id === currentUser?.id
+                        return (
+                          <tr key={u.id} className="hover:bg-slate-50/60">
+                            <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                              <div className="flex items-center gap-1.5">
+                                <span>{u.username}</span>
+                                {isSelf && (
+                                  <span className="text-[9px] font-sans font-bold bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded font-mono">
+                                    YOU
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="font-semibold text-slate-800">{u.full_name || '—'}</div>
+                              <div className="text-[11px] text-slate-400 font-mono">{u.email}</div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    u.role === 'ADMIN'
+                                      ? 'bg-purple-100 text-purple-800 border-purple-300'
+                                      : u.role === 'ANALYST'
+                                      ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                      : 'bg-slate-100 text-slate-700 border-slate-300'
+                                  }`}
+                                >
+                                  {u.role}
+                                </span>
+                                <select
+                                  value={u.role}
+                                  disabled={isSelf}
+                                  onChange={(e) => {
+                                    const targetRole = e.target.value as UserRole
+                                    if (targetRole !== u.role) {
+                                      setRoleChangeTarget({ user: u, newRole: targetRole })
+                                    }
+                                  }}
+                                  className="text-[10px] bg-white border border-slate-300 rounded px-1.5 py-0.5 font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  title={isSelf ? 'Self-demotion is restricted by system policy' : 'Modify user role'}
+                                >
+                                  <option value="ADMIN">ADMIN</option>
+                                  <option value="ANALYST">ANALYST</option>
+                                  <option value="VIEWER">VIEWER</option>
+                                </select>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  u.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                                }`}
+                              >
+                                {u.is_active ? 'ACTIVE' : 'DEACTIVATED'}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-500 text-[11px]">
+                              {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : 'Never'}
+                            </td>
+                            <td className="py-3.5 px-4 text-right">
+                              <button
+                                type="button"
+                                disabled={isSelf}
+                                onClick={() => handleToggleUser(u)}
+                                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition ${
+                                  isSelf
+                                    ? 'text-slate-400 bg-slate-100 cursor-not-allowed'
+                                    : u.is_active
+                                    ? 'text-rose-700 bg-rose-50 hover:bg-rose-100'
+                                    : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                                }`}
+                                title={isSelf ? 'Cannot deactivate your own account' : undefined}
+                              >
+                                {u.is_active ? 'Deactivate' : 'Reactivate'}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-1">
+              <h4 className="font-bold text-amber-900">Access Control Administration Restricted</h4>
+              <p className="text-amber-800">
+                User provisioning, deactivation, and role assignments require <strong>ADMIN</strong> privileges. Your active role is <strong>{role}</strong>.
+              </p>
+            </div>
+          )}
+
+          {/* Role Permissions Reference Policy Matrix */}
+          <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-xs space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              Role-Based Access Policy Matrix (RBAC Enforcement)
+            </h4>
+            <p className="text-xs text-slate-500">
+              Each API request transmits a JWT bearer token verified by the FastAPI backend dependency injection pipeline. Violations return HTTP 403 Forbidden.
+            </p>
+
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-[11px]">
-                    <th className="py-3 px-4">Username</th>
-                    <th className="py-3 px-4">Full Name & Email</th>
-                    <th className="py-3 px-4">Role</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Last Login</th>
-                    <th className="py-3 px-4 text-right">Action</th>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold text-[11px]">
+                    <th className="py-2.5 px-3">System Module / Endpoint Scope</th>
+                    <th className="py-2.5 px-3 text-center">Auditor (Viewer)</th>
+                    <th className="py-2.5 px-3 text-center">Risk Analyst</th>
+                    <th className="py-2.5 px-3 text-center">Security Administrator</th>
+                    <th className="py-2.5 px-3">Backend Security Rule</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-slate-50/60">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{u.username}</td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-slate-800">{u.full_name || '—'}</div>
-                        <div className="text-[11px] text-slate-400">{u.email}</div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                            u.role === 'ADMIN'
-                              ? 'bg-purple-100 text-purple-800 border-purple-300'
-                              : u.role === 'ANALYST'
-                              ? 'bg-blue-100 text-blue-800 border-blue-300'
-                              : 'bg-slate-100 text-slate-700 border-slate-300'
-                          }`}
-                        >
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            u.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                          }`}
-                        >
-                          {u.is_active ? 'ACTIVE' : 'DEACTIVATED'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-500 text-[11px]">
-                        {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : 'Never'}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleUser(u)}
-                          className={`px-2.5 py-1 text-xs font-semibold rounded-md transition ${
-                            u.is_active
-                              ? 'text-rose-700 bg-rose-50 hover:bg-rose-100'
-                              : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
-                          }`}
-                        >
-                          {u.is_active ? 'Deactivate' : 'Reactivate'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  <tr>
+                    <td className="py-2 px-3 font-medium text-slate-800">Executive Dashboard & Analytics</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Read</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Read</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Full</td>
+                    <td className="py-2 px-3 font-mono text-[10px] text-slate-500">require_viewer</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 px-3 font-medium text-slate-800">Transaction Analysis & Ingestion</td>
+                    <td className="py-2 px-3 text-center text-slate-500">Read-Only</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Create / Assess</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Full</td>
+                    <td className="py-2 px-3 font-mono text-[10px] text-slate-500">require_analyst</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 px-3 font-medium text-slate-800">Batch CSV Upload Pipeline</td>
+                    <td className="py-2 px-3 text-center text-rose-500 font-bold">✗ 403 Forbidden</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Upload / Validate</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Full</td>
+                    <td className="py-2 px-3 font-mono text-[10px] text-slate-500">require_analyst</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 px-3 font-medium text-slate-800">Investigation Case Management</td>
+                    <td className="py-2 px-3 text-center text-slate-500">Read-Only</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Notes / Close / Link</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Full</td>
+                    <td className="py-2 px-3 font-mono text-[10px] text-slate-500">require_analyst</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 px-3 font-medium text-slate-800">ML Supervised Training Pipeline</td>
+                    <td className="py-2 px-3 text-center text-rose-500 font-bold">✗ 403 Forbidden</td>
+                    <td className="py-2 px-3 text-center text-rose-500 font-bold">✗ 403 Forbidden</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Execute Training</td>
+                    <td className="py-2 px-3 font-mono text-[10px] text-slate-500">require_admin</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 px-3 font-medium text-slate-800">Cryptographic Audit Chain Verification</td>
+                    <td className="py-2 px-3 text-center text-rose-500 font-bold">✗ 403 Forbidden</td>
+                    <td className="py-2 px-3 text-center text-rose-500 font-bold">✗ 403 Forbidden</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Verify Hashes</td>
+                    <td className="py-2 px-3 font-mono text-[10px] text-slate-500">require_admin</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 px-3 font-medium text-slate-800">User Management & Role Assignment</td>
+                    <td className="py-2 px-3 text-center text-rose-500 font-bold">✗ 403 Forbidden</td>
+                    <td className="py-2 px-3 text-center text-rose-500 font-bold">✗ 403 Forbidden</td>
+                    <td className="py-2 px-3 text-center text-emerald-600 font-bold">✓ Manage Roles</td>
+                    <td className="py-2 px-3 font-mono text-[10px] text-slate-500">require_admin</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Role Modification */}
+      {roleChangeTarget && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center space-x-2 text-slate-900">
+              <span className="text-xl">🛡️</span>
+              <h3 className="text-base font-bold">
+                Confirm Administrative Role Change
+              </h3>
+            </div>
+
+            {roleError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-xs">
+                {roleError}
+              </div>
+            )}
+
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2 text-slate-700">
+              <p>
+                You are modifying the authorization role for account:
+              </p>
+              <div className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1">
+                <div className="font-mono font-bold text-slate-900">
+                  @{roleChangeTarget.user.username}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {roleChangeTarget.user.full_name || roleChangeTarget.user.email}
+                </div>
+                <div className="flex items-center gap-2 pt-1 font-semibold text-xs">
+                  <span className="line-through text-slate-400">{roleChangeTarget.user.role}</span>
+                  <span>➔</span>
+                  <span className="font-bold text-purple-700">{roleChangeTarget.newRole}</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed pt-1">
+                This administrative action is enforced directly on the backend. A new cryptographic event (<code className="bg-slate-100 px-1 py-0.5 rounded font-mono">USER_ROLE_UPDATED</code>) will be appended to the SHA-256 audit hash chain.
+              </p>
+            </div>
+
+            <div className="flex justify-end space-x-2.5 pt-2">
+              <button
+                type="button"
+                disabled={roleUpdating}
+                onClick={() => {
+                  setRoleChangeTarget(null)
+                  setRoleError(null)
+                }}
+                className="px-3.5 py-1.5 border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={roleUpdating}
+                onClick={handleConfirmRoleChange}
+                className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg shadow-sm transition flex items-center space-x-1.5"
+              >
+                {roleUpdating && <LoadingSpinner />}
+                <span>Confirm & Update Role</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

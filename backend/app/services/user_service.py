@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.db.models import User
-from app.core.security import hash_password, verify_password, login_rate_limiter
+from app.core.security import hash_password, verify_password, login_rate_limiter, VALID_ROLES
 from app.schemas.auth import UserCreate
 from app.services.audit_service import record_audit_event
 
@@ -218,6 +218,42 @@ def update_user_status(
         record_reference=user.username,
         status="SUCCESS",
         metadata={"user_id": user.id, "old_active": old_status, "new_active": is_active},
+    )
+    return user
+
+
+def update_user_role(
+    db: Session,
+    user_id: int,
+    new_role: str,
+    actor_username: str = "SYSTEM",
+) -> User:
+    """Modify the platform authorization role for a user account."""
+    user = get_user_by_id(db, user_id)
+    if not user:
+        raise UserNotFoundError(user_id)
+
+    role_upper = new_role.strip().upper()
+    if role_upper not in VALID_ROLES:
+        raise ValueError(f"Invalid role '{new_role}'. Must be one of {sorted(VALID_ROLES)}")
+
+    old_role = user.role
+    user.role = role_upper
+    user.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+
+    record_audit_event(
+        db,
+        event_type="USER_ROLE_UPDATED",
+        actor_username=actor_username,
+        record_reference=user.username,
+        status="SUCCESS",
+        metadata={
+            "user_id": user.id,
+            "old_role": old_role,
+            "new_role": role_upper,
+        },
     )
     return user
 

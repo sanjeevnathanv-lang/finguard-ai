@@ -23,10 +23,11 @@ export default function App() {
           {activeTab === 'rules' && <ExpertRulesExplorer />}
           {activeTab === 'models' && <ModelEvaluation />}
           {activeTab === 'investigations' && <InvestigationCases />}
-          {(activeTab === 'governance' || activeTab === 'reports') && <AuditGovernance />}
+          {activeTab === 'access_control' && <AuditGovernance initialTab="users" />}
+          {(activeTab === 'governance' || activeTab === 'reports') && <AuditGovernance initialTab="audit" />}
 
           {/* Future Phase Modules Placeholders */}
-          {!['dashboard', 'transactions', 'csv_import', 'rules', 'models', 'investigations', 'governance', 'reports'].includes(activeTab) && (
+          {!['dashboard', 'transactions', 'csv_import', 'rules', 'models', 'investigations', 'governance', 'access_control', 'reports'].includes(activeTab) && (
             <div className="max-w-3xl mx-auto py-16 text-center space-y-4">
               <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 font-bold text-2xl">
                 ⚙

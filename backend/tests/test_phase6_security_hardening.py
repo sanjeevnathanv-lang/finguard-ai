@@ -218,3 +218,96 @@ def test_health_and_readiness_probes(client):
     assert r_data["status"] == "ready"
     assert r_data["database"] == "connected"
     assert r_data["knowledge_base_rules"] > 0
+
+
+def test_admin_update_user_role_and_audit_log(client, test_admin_user, test_analyst_user, db_session):
+    from app.main import app
+    from app.core.deps import get_current_user
+
+    # Persist test users into the active test session
+    db_session.add(test_admin_user)
+    db_session.add(test_analyst_user)
+    db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: test_admin_user
+
+    # Admin changes Analyst's role to VIEWER
+    res = client.patch(
+        f"/api/users/{test_analyst_user.id}/role",
+        json={"role": "VIEWER"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["role"] == "VIEWER"
+
+    # Verify database was updated
+    db_session.refresh(test_analyst_user)
+    assert test_analyst_user.role == "VIEWER"
+
+    # Verify USER_ROLE_UPDATED audit log entry was created
+    audit_entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "USER_ROLE_UPDATED")
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert audit_entry is not None
+    assert audit_entry.actor_username == test_admin_user.username
+    assert audit_entry.record_reference == test_analyst_user.username
+    import json
+    meta = json.loads(audit_entry.metadata_json) if isinstance(audit_entry.metadata_json, str) else audit_entry.metadata_json
+    assert meta["new_role"] == "VIEWER"
+
+    # Verify audit hash chain remains mathematically valid
+    chain_check = audit_service.verify_audit_log_integrity(db_session)
+    assert chain_check["is_valid"] is True
+
+
+def test_admin_cannot_demote_self(client, test_admin_user, db_session):
+    from app.main import app
+    from app.core.deps import get_current_user
+
+    db_session.add(test_admin_user)
+    db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: test_admin_user
+
+    res = client.patch(
+        f"/api/users/{test_admin_user.id}/role",
+        json={"role": "ANALYST"},
+    )
+    assert res.status_code == 400
+    assert "cannot demote their own active administrative account" in res.json()["detail"]
+
+
+def test_unauthorized_role_change_rejection(client, test_analyst_user, test_admin_user, db_session):
+    from app.main import app
+    from app.core.deps import get_current_user
+
+    db_session.add(test_admin_user)
+    db_session.add(test_analyst_user)
+    db_session.commit()
+
+    # 1. Unauthenticated request -> 401
+    app.dependency_overrides.pop(get_current_user, None)
+    unauth_res = client.patch(
+        f"/api/users/{test_analyst_user.id}/role",
+        json={"role": "ADMIN"},
+    )
+    assert unauth_res.status_code == 401
+
+    # 2. Analyst attempts role modification -> 403
+    app.dependency_overrides[get_current_user] = lambda: test_analyst_user
+    analyst_res = client.patch(
+        f"/api/users/{test_admin_user.id}/role",
+        json={"role": "VIEWER"},
+    )
+    assert analyst_res.status_code == 403
+
+    # 3. Invalid role string -> 422
+    app.dependency_overrides[get_current_user] = lambda: test_admin_user
+    invalid_res = client.patch(
+        f"/api/users/{test_analyst_user.id}/role",
+        json={"role": "SUPERUSER"},
+    )
+    assert invalid_res.status_code == 422

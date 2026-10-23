@@ -1020,6 +1020,25 @@ export async function updateUserStatusApi(userId: number, isActive: boolean): Pr
   return response.json()
 }
 
+export async function updateUserRoleApi(userId: number, role: UserRole): Promise<UserProfile> {
+  const response = await authFetch(`/api/users/${userId}/role`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  })
+  if (!response.ok) {
+    let detail = `Failed to update user role (${response.status})`
+    try {
+      const err = await response.json()
+      detail = err.detail || JSON.stringify(err)
+    } catch {
+      detail = await response.text()
+    }
+    throw new Error(detail)
+  }
+  return response.json()
+}
+
 export async function getAuditLogsApi(params?: {
   event_type?: string
   actor_username?: string

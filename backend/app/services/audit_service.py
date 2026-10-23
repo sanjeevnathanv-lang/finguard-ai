@@ -1,5 +1,6 @@
 import json
 import hashlib
+import threading
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple, List
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from sqlalchemy import desc
 from app.db.models import AuditLog
 
 GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000"
+_audit_write_lock = threading.Lock()
 
 
 def normalize_audit_ts(dt: datetime) -> str:
@@ -59,58 +61,60 @@ def record_audit_event(
     """
     Record an attributable, cryptographically hash-chained audit event.
     Appends to audit_log table without exposing sensitive credentials or secrets.
+    Protected by a thread lock to ensure sequential chain continuity under concurrency.
     """
-    now = datetime.now(timezone.utc)
-    now_iso = normalize_audit_ts(now)
+    with _audit_write_lock:
+        now = datetime.now(timezone.utc)
+        now_iso = normalize_audit_ts(now)
 
-    # Get hash of the latest event in the chain
-    latest_event = (
-        db.query(AuditLog.event_hash)
-        .order_by(AuditLog.id.desc())
-        .first()
-    )
-    previous_hash = latest_event[0] if latest_event else GENESIS_HASH
+        # Get hash of the latest event in the chain
+        latest_event = (
+            db.query(AuditLog.event_hash)
+            .order_by(AuditLog.id.desc())
+            .first()
+        )
+        previous_hash = latest_event[0] if latest_event else GENESIS_HASH
 
-    # Sanitize metadata: remove any password or token keys if present
-    clean_meta = None
-    if metadata:
-        clean_meta = {}
-        for k, v in metadata.items():
-            if any(s in k.lower() for s in ("password", "token", "secret", "hash")):
-                clean_meta[k] = "[REDACTED]"
-            else:
-                clean_meta[k] = v
+        # Sanitize metadata: remove any password or token keys if present
+        clean_meta = None
+        if metadata:
+            clean_meta = {}
+            for k, v in metadata.items():
+                if any(s in k.lower() for s in ("password", "token", "secret", "hash")):
+                    clean_meta[k] = "[REDACTED]"
+                else:
+                    clean_meta[k] = v
 
-    meta_json = json.dumps(clean_meta, sort_keys=True) if clean_meta else None
+        meta_json = json.dumps(clean_meta, sort_keys=True) if clean_meta else None
 
-    # Compute hash chain digest
-    event_hash = compute_event_hash(
-        event_type=event_type,
-        timestamp_iso=now_iso,
-        actor_username=actor_username,
-        record_reference=record_reference,
-        status=status,
-        metadata_json=meta_json,
-        previous_hash=previous_hash,
-    )
+        # Compute hash chain digest
+        event_hash = compute_event_hash(
+            event_type=event_type,
+            timestamp_iso=now_iso,
+            actor_username=actor_username,
+            record_reference=record_reference,
+            status=status,
+            metadata_json=meta_json,
+            previous_hash=previous_hash,
+        )
 
-    audit_entry = AuditLog(
-        event_type=event_type,
-        timestamp=now,
-        actor_username=actor_username,
-        actor_role=actor_role,
-        record_reference=record_reference,
-        status=status,
-        ip_address=ip_address,
-        metadata_json=meta_json,
-        previous_hash=previous_hash,
-        event_hash=event_hash,
-    )
+        audit_entry = AuditLog(
+            event_type=event_type,
+            timestamp=now,
+            actor_username=actor_username,
+            actor_role=actor_role,
+            record_reference=record_reference,
+            status=status,
+            ip_address=ip_address,
+            metadata_json=meta_json,
+            previous_hash=previous_hash,
+            event_hash=event_hash,
+        )
 
-    db.add(audit_entry)
-    db.commit()
-    db.refresh(audit_entry)
-    return audit_entry
+        db.add(audit_entry)
+        db.commit()
+        db.refresh(audit_entry)
+        return audit_entry
 
 
 def list_audit_logs(

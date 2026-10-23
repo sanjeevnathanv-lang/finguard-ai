@@ -51,6 +51,18 @@ class UserUpdateStatus(BaseModel):
     is_active: bool
 
 
+class UserUpdateRole(BaseModel):
+    role: str
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        upper = v.strip().upper()
+        if upper not in VALID_ROLES:
+            raise ValueError(f"Role must be one of {sorted(VALID_ROLES)}")
+        return upper
+
+
 class UserRead(BaseModel):
     id: int
     username: str
