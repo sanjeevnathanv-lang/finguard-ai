@@ -49,6 +49,6 @@ jobs:
       - name: Verify Unified Server Initialization
         run: |
           python -m uvicorn app.main:app --app-dir backend --port 8000 &
-          sleep 3
+          sleep 5
           curl -f http://127.0.0.1:8000/health
           curl -f http://127.0.0.1:8000/
